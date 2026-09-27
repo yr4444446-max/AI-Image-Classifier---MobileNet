@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Image Classifier - MobileNet</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #fafafa;
+            color: #1a1a1a;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 15px;
+        }
+
+        h1 {
+            margin-bottom: 4px;
+            font-size: 1.7rem;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+
+        p.subtitle {
+            color: #666666;
+            margin-top: 0;
+            margin-bottom: 25px;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+
+        .card {
+            background: #ffffff;
+            border: 2px solid #1a1a1a;
+            border-radius: 14px;
+            padding: 24px;
+            width: 100%;
+            max-width: 480px;
+            text-align: center;
+            box-shadow: 6px 6px 0px #1a1a1a;
+        }
+
+        #imagePreview {
+            width: 100%;
+            max-height: 280px;
+            object-fit: contain;
+            border-radius: 8px;
+            margin: 15px 0;
+            background: #f2f2f2;
+            border: 1px solid #d9d9d9;
+            display: none;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .upload-btn,
+        .webcam-btn {
+            background: #1a1a1a;
+            color: #ffffff;
+            border: 2px solid #1a1a1a;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 700;
+            cursor: pointer;
+            margin: 5px;
+            transition: all 0.15s ease;
+            display: inline-block;
+        }
+
+        .upload-btn:hover,
+        .webcam-btn:hover {
+            background: #ffffff;
+            color: #1a1a1a;
+        }
+
+        #webcam {
+            width: 100%;
+            max-height: 280px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border: 1px solid #d9d9d9;
+            display: none;
+        }
+
+        #status {
+            color: #666666;
+            font-size: 0.85rem;
+            margin-top: 10px;
+            min-height: 20px;
+        }
+
+        .results {
+            margin-top: 15px;
+            text-align: left;
+        }
+
+        .result-row {
+            display: flex;
+            justify-content: space-between;
+            background: #ffffff;
+            border: 1px solid #1a1a1a;
+            padding: 9px 14px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        .result-row .label {
+            font-weight: 700;
+        }
+
+        .result-row .confidence {
+            font-weight: 700;
+        }
+
+        footer {
+            margin-top: 20px;
+            color: #999999;
+            font-size: 0.75rem;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>AI Image Classifier</h1>
+    <p class="subtitle">TensorFlow.js + MobileNet (cloud-hosted pretrained model)</p>
+
+    <div class="card">
+        <label class="upload-btn" for="fileInput">Upload Image</label>
+        <input type="file" id="fileInput" accept="image/*" />
+        <button class="webcam-btn" id="webcamBtn">Use Webcam</button>
+
+        <img id="imagePreview" alt="preview" />
+        <video id="webcam" autoplay muted playsinline></video>
+
+        <div id="status">Load an image or start the webcam to begin</div>
+        <div class="results" id="results"></div>
+    </div>
+
+    <footer>Cloud Computing Practical — Model loaded live from Google's TFJS model hub</footer>
+
+    <!-- TensorFlow.js + MobileNet loaded from CDN (this IS the "cloud-based AI model") -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const resultsEl = document.getElementById('results');
+        const imagePreview = document.getElementById('imagePreview');
+        const webcamEl = document.getElementById('webcam');
+        const fileInput = document.getElementById('fileInput');
+        const webcamBtn = document.getElementById('webcamBtn');
+
+        let model = null;
+        let webcamActive = false;
+        let webcamStream = null;
+
+        // Load the MobileNet model once when the page opens
+        async function loadModel() {
+            statusEl.textContent = 'Loading AI model from the cloud...';
+            model = await mobilenet.load();
+            statusEl.textContent = 'Model ready! Upload an image or use your webcam.';
+        }
+        loadModel();
+
+        function renderPredictions(predictions) {
+            resultsEl.innerHTML = '';
+            predictions.forEach(p => {
+                const row = document.createElement('div');
+                row.className = 'result-row';
+                row.innerHTML = `<span class="label">${p.className.split(',')[0]}</span>
+                          <span class="confidence">${(p.probability * 100).toFixed(1)}%</span>`;
+                resultsEl.appendChild(row);
+            });
+        }
+
+        async function classify(source) {
+            if (!model) { statusEl.textContent = 'Model still loading, please wait...'; return; }
+            statusEl.textContent = 'Analyzing...';
+            const predictions = await model.classify(source);
+            statusEl.textContent = 'Top predictions:';
+            renderPredictions(predictions);
+        }
+
+        // Handle file upload
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            stopWebcam();
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                imagePreview.src = evt.target.result;
+                imagePreview.style.display = 'block';
+                imagePreview.onload = () => classify(imagePreview);
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Handle webcam
+        webcamBtn.addEventListener('click', async () => {
+            if (webcamActive) { stopWebcam(); return; }
+            try {
+                webcamStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                webcamEl.srcObject = webcamStream;
+                webcamEl.style.display = 'block';
+                imagePreview.style.display = 'none';
+                webcamActive = true;
+                webcamBtn.textContent = 'Stop Webcam';
+                detectLoop();
+            } catch (err) {
+                statusEl.textContent = 'Could not access webcam: ' + err.message;
+            }
+        });
+
+        function stopWebcam() {
+            if (webcamStream) {
+                webcamStream.getTracks().forEach(t => t.stop());
+            }
+            webcamActive = false;
+            webcamEl.style.display = 'none';
+            webcamBtn.textContent = 'Use Webcam';
+        }
+
+        async function detectLoop() {
+            if (!webcamActive) return;
+            await classify(webcamEl);
+            setTimeout(detectLoop, 1200); // re-classify roughly every 1.2s
+        }
+    </script>
+
+</body>
+
+</html>
